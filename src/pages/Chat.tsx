@@ -13,6 +13,8 @@ import { toast } from 'sonner';
 import {
   generateRSAKeyPairs,
   exportPublicKeys,
+  exportPrivateKeys,
+  importPrivateKeys,
   generateSafetyCode,
   encryptMessage,
   decryptMessage,
@@ -21,6 +23,7 @@ import {
   importPublicKey,
 } from '@/lib/crypto';
 import type { RSAKeyPair } from '@/lib/crypto';
+import { storePrivateKeys, getStoredPrivateKeys, deleteExpiredMessages } from '@/lib/indexeddb';
 
 interface User {
   username: string;
@@ -67,56 +70,130 @@ export default function Chat() {
 
   // Initialize keys and register user
   useEffect(() => {
+    let isMounted = true;
+
+    const init = async () => {
+      if (!user || !username) return;
+      await initializeUser(isMounted);
+    };
+
     if (user && username) {
-      initializeUser();
+      init();
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, [user, username]);
 
-  const initializeUser = async () => {
+  const initializeUser = async (isMounted: boolean) => {
+    if (!user || !username) return;
+    
     try {
-      // Check if user already exists
+      // Check if user already exists in database
       const { data: existingUser } = await supabase
         .from('users')
         .select('*')
         .eq('username', username)
         .single();
 
+      if (!isMounted) return;
+
       if (!existingUser) {
-        // Generate RSA keys
+        // New user - generate RSA keys
         const keys = await generateRSAKeyPairs();
+        if (!isMounted) return;
         setKeyPair(keys);
 
-        // Export public keys
-        const exported = await exportPublicKeys(keys);
+        // Export public keys for server storage
+        const exportedPublic = await exportPublicKeys(keys);
+        
+        // Export private keys for local storage
+        const exportedPrivate = await exportPrivateKeys(keys);
+        
+        // Store private keys locally in IndexedDB
+        await storePrivateKeys(
+          user.id,
+          exportedPrivate.encryptionPrivateKey,
+          exportedPrivate.signaturePrivateKey
+        );
         
         // Generate safety code
-        const safetyCode = await generateSafetyCode(exported.encryptionPublicKey);
+        const safetyCode = await generateSafetyCode(exportedPublic.encryptionPublicKey);
 
         // Register user with public keys
         const { error } = await supabase.from('users').insert({
           id: user.id,
-          username: username!,
-          rsa_public_key_encryption: exported.encryptionPublicKey,
-          rsa_public_key_signature: exported.signaturePublicKey,
+          username: username,
+          rsa_public_key_encryption: exportedPublic.encryptionPublicKey,
+          rsa_public_key_signature: exportedPublic.signaturePublicKey,
           safety_code: safetyCode,
         });
 
         if (error) throw error;
         
-        toast.success('Encryption keys generated!');
+        if (isMounted) toast.success('Encryption keys generated and stored securely!');
       } else {
-        // User exists, we'd need to implement key recovery here
-        // For demo purposes, generate new keys
-        const keys = await generateRSAKeyPairs();
-        setKeyPair(keys);
+        // Existing user - try to recover keys from IndexedDB
+        const storedKeys = await getStoredPrivateKeys(user.id);
+        if (!isMounted) return;
+        
+        if (storedKeys) {
+          // Recover keys from local storage
+          const keys = await importPrivateKeys(
+            storedKeys.encryptionPrivateKey,
+            storedKeys.signaturePrivateKey,
+            existingUser.rsa_public_key_encryption,
+            existingUser.rsa_public_key_signature
+          );
+          if (!isMounted) return;
+          setKeyPair(keys);
+          toast.success('Encryption keys recovered!');
+        } else {
+          // Keys not found locally - this is a new device or keys were cleared
+          // Generate new keys and update the user record
+          const keys = await generateRSAKeyPairs();
+          if (!isMounted) return;
+          setKeyPair(keys);
+
+          // Export public keys for server storage
+          const exportedPublic = await exportPublicKeys(keys);
+          
+          // Export private keys for local storage
+          const exportedPrivate = await exportPrivateKeys(keys);
+          
+          // Store private keys locally in IndexedDB
+          await storePrivateKeys(
+            user.id,
+            exportedPrivate.encryptionPrivateKey,
+            exportedPrivate.signaturePrivateKey
+          );
+          
+          // Generate new safety code
+          const safetyCode = await generateSafetyCode(exportedPublic.encryptionPublicKey);
+
+          // Update user's public keys (old messages can't be decrypted anymore)
+          const { error } = await supabase
+            .from('users')
+            .update({
+              rsa_public_key_encryption: exportedPublic.encryptionPublicKey,
+              rsa_public_key_signature: exportedPublic.signaturePublicKey,
+              safety_code: safetyCode,
+            })
+            .eq('id', user.id);
+
+          if (error) throw error;
+          
+          if (isMounted) toast.warning('New device detected. New encryption keys generated. Previous messages cannot be decrypted.');
+        }
       }
 
-      fetchUsers();
+      if (isMounted) fetchUsers();
     } catch (error) {
-      console.error('Error initializing user:', error);
-      toast.error('Failed to initialize encryption');
+      if (import.meta.env.DEV) console.error('Error initializing user:', error);
+      if (isMounted) toast.error('Failed to initialize encryption');
     } finally {
-      setInitializing(false);
+      if (isMounted) setInitializing(false);
     }
   };
 
@@ -127,7 +204,7 @@ export default function Chat() {
       .order('last_seen', { ascending: false });
 
     if (error) {
-      console.error('Error fetching users:', error);
+      if (import.meta.env.DEV) console.error('Error fetching users:', error);
       return;
     }
 
@@ -140,25 +217,30 @@ export default function Chat() {
 
     fetchMessages();
 
-    // Subscribe to new messages
-    const channel = supabase
-      .channel('messages')
+    // Subscribe to new messages - listen for messages in both directions
+    // Channel 1: Messages FROM the selected user TO current user
+    const incomingChannel = supabase
+      .channel(`incoming-${selectedUser}-${username}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'encrypted_messages',
-          filter: `sender_username=eq.${selectedUser},recipient_username=eq.${username}`,
+          filter: `recipient_username=eq.${username}`,
         },
         (payload) => {
-          handleNewMessage(payload.new as Message);
+          const msg = payload.new as Message;
+          // Only handle if it's from the selected user
+          if (msg.sender_username === selectedUser) {
+            handleNewMessage(msg);
+          }
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(incomingChannel);
     };
   }, [selectedUser, username]);
 
@@ -172,7 +254,7 @@ export default function Chat() {
       .order('timestamp', { ascending: true });
 
     if (error) {
-      console.error('Error fetching messages:', error);
+      if (import.meta.env.DEV) console.error('Error fetching messages:', error);
       return;
     }
 
@@ -220,7 +302,7 @@ export default function Chat() {
 
       return { ...msg, decryptedText: plaintext, verified: false };
     } catch (error) {
-      console.error('Error decrypting message:', error);
+      if (import.meta.env.DEV) console.error('Error decrypting message:', error);
       return { ...msg, decryptedText: '[Decryption failed]', verified: false };
     }
   };
@@ -292,7 +374,7 @@ export default function Chat() {
       
       toast.success('Message encrypted and sent!');
     } catch (error) {
-      console.error('Error sending message:', error);
+      if (import.meta.env.DEV) console.error('Error sending message:', error);
       toast.error('Failed to send message');
     }
   };
@@ -300,6 +382,45 @@ export default function Chat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Update last_seen periodically to show online status
+  useEffect(() => {
+    if (!user) return;
+
+    const updateLastSeen = async () => {
+      await supabase
+        .from('users')
+        .update({ last_seen: new Date().toISOString() })
+        .eq('id', user.id);
+    };
+
+    // Update immediately
+    updateLastSeen();
+
+    // Then update every 2 minutes
+    const interval = setInterval(updateLastSeen, 2 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [user]);
+
+  // Clean up expired messages periodically
+  useEffect(() => {
+    const cleanupExpiredMessages = async () => {
+      // Clean local IndexedDB
+      await deleteExpiredMessages();
+      
+      // Filter out expired messages from state
+      const now = new Date();
+      setMessages(prev => prev.filter(msg => 
+        !msg.expires_at || new Date(msg.expires_at) > now
+      ));
+    };
+
+    // Run cleanup every 30 seconds
+    const interval = setInterval(cleanupExpiredMessages, 30 * 1000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   if (authLoading || initializing) {
     return (
@@ -352,12 +473,14 @@ export default function Chat() {
       <div className="flex-1 flex overflow-hidden">
         {/* User List */}
         <div className="w-80 flex-shrink-0">
-          <UserList
-            users={users}
-            currentUser={username!}
-            selectedUser={selectedUser}
-            onSelectUser={setSelectedUser}
-          />
+          {username && (
+            <UserList
+              users={users}
+              currentUser={username}
+              selectedUser={selectedUser}
+              onSelectUser={setSelectedUser}
+            />
+          )}
         </div>
 
         {/* Chat Area */}

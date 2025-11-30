@@ -98,6 +98,72 @@ export async function importPublicKey(
 }
 
 /**
+ * Export private keys to JWK format for storage
+ */
+export async function exportPrivateKeys(keyPair: RSAKeyPair): Promise<{
+  encryptionPrivateKey: JsonWebKey;
+  signaturePrivateKey: JsonWebKey;
+}> {
+  const encryptionPrivateKey = await window.crypto.subtle.exportKey(
+    "jwk",
+    keyPair.encryptionKeyPair.privateKey
+  );
+  
+  const signaturePrivateKey = await window.crypto.subtle.exportKey(
+    "jwk",
+    keyPair.signatureKeyPair.privateKey
+  );
+
+  return {
+    encryptionPrivateKey,
+    signaturePrivateKey,
+  };
+}
+
+/**
+ * Import private keys from JWK format and reconstruct full key pairs
+ */
+export async function importPrivateKeys(
+  encryptionPrivateJwk: JsonWebKey,
+  signaturePrivateJwk: JsonWebKey,
+  encryptionPublicKeyBase64: string,
+  signaturePublicKeyBase64: string
+): Promise<RSAKeyPair> {
+  // Import encryption private key
+  const encryptionPrivateKey = await window.crypto.subtle.importKey(
+    "jwk",
+    encryptionPrivateJwk,
+    { name: "RSA-OAEP", hash: "SHA-256" },
+    true,
+    ["decrypt"]
+  );
+
+  // Import signature private key
+  const signaturePrivateKey = await window.crypto.subtle.importKey(
+    "jwk",
+    signaturePrivateJwk,
+    { name: "RSA-PSS", hash: "SHA-256" },
+    true,
+    ["sign"]
+  );
+
+  // Import public keys from stored base64
+  const encryptionPublicKey = await importPublicKey(encryptionPublicKeyBase64, "encryption");
+  const signaturePublicKey = await importPublicKey(signaturePublicKeyBase64, "signature");
+
+  return {
+    encryptionKeyPair: {
+      publicKey: encryptionPublicKey,
+      privateKey: encryptionPrivateKey,
+    },
+    signatureKeyPair: {
+      publicKey: signaturePublicKey,
+      privateKey: signaturePrivateKey,
+    },
+  };
+}
+
+/**
  * Generate Safety Code (SHA-256 hash of public key)
  */
 export async function generateSafetyCode(publicKey: string): Promise<string> {
@@ -242,7 +308,7 @@ export async function verifySignature(
       messageBytes
     );
   } catch (error) {
-    console.error("Signature verification failed:", error);
+    if (import.meta.env.DEV) console.error("Signature verification failed:", error);
     return false;
   }
 }

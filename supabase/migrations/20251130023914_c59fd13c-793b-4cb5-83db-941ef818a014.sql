@@ -19,19 +19,20 @@ FOR SELECT
 TO authenticated
 USING (true);
 
--- Users can insert their own record
+-- Users can only insert their own record (id must match auth.uid())
 CREATE POLICY "Users can insert own record"
 ON public.users
 FOR INSERT
 TO authenticated
-WITH CHECK (true);
+WITH CHECK (id = auth.uid());
 
--- Users can update their own last_seen
+-- Users can only update their own record
 CREATE POLICY "Users can update own record"
 ON public.users
 FOR UPDATE
 TO authenticated
-USING (true);
+USING (id = auth.uid())
+WITH CHECK (id = auth.uid());
 
 -- Create encrypted messages metadata table (server stores encrypted data only)
 CREATE TABLE public.encrypted_messages (

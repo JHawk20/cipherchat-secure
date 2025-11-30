@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { clearPrivateKeys } from '@/lib/indexeddb';
 
 interface AuthContextType {
   user: User | null;
@@ -19,50 +20,68 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const isMounted = useRef(true);
+
+  const fetchUsername = useCallback(async (currentUser: User) => {
+    // First try to get username from user metadata (set during signup)
+    const metadataUsername = currentUser.user_metadata?.username;
+    if (metadataUsername) {
+      if (isMounted.current) {
+        setUsername(metadataUsername);
+      }
+      return;
+    }
+
+    // Fall back to fetching from database
+    const { data } = await supabase
+      .from('users')
+      .select('username')
+      .eq('id', currentUser.id)
+      .single();
+    
+    if (data && isMounted.current) {
+      setUsername(data.username);
+    }
+  }, []);
 
   useEffect(() => {
-    // Set up auth state listener
+    isMounted.current = true;
+
+    // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+      async (event, newSession) => {
+        if (!isMounted.current) return;
         
-        // Fetch username when session changes
-        if (session?.user) {
-          setTimeout(() => {
-            fetchUsername(session.user.id);
-          }, 0);
+        setSession(newSession);
+        setUser(newSession?.user ?? null);
+        
+        if (newSession?.user) {
+          // Defer the fetch to avoid Supabase deadlock
+          await fetchUsername(newSession.user);
         } else {
           setUsername(null);
         }
       }
     );
 
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    // THEN check for existing session
+    supabase.auth.getSession().then(async ({ data: { session: existingSession } }) => {
+      if (!isMounted.current) return;
       
-      if (session?.user) {
-        fetchUsername(session.user.id);
+      setSession(existingSession);
+      setUser(existingSession?.user ?? null);
+      
+      if (existingSession?.user) {
+        await fetchUsername(existingSession.user);
       }
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const fetchUsername = async (userId: string) => {
-    const { data } = await supabase
-      .from('users')
-      .select('username')
-      .eq('id', userId)
-      .single();
-    
-    if (data) {
-      setUsername(data.username);
-    }
-  };
+    return () => {
+      isMounted.current = false;
+      subscription.unsubscribe();
+    };
+  }, [fetchUsername]);
 
   const signUp = async (email: string, password: string, username: string) => {
     try {
@@ -104,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    await clearPrivateKeys(); // Clear local keys on sign out
     setUsername(null);
   };
 

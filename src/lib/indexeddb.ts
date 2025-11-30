@@ -12,6 +12,13 @@ interface ChatMessage {
   expiresAt?: number;
 }
 
+interface StoredKeyPair {
+  id: string; // 'keys' - single record per user
+  userId: string;
+  encryptionPrivateKey: JsonWebKey;
+  signaturePrivateKey: JsonWebKey;
+}
+
 interface ChatDB extends DBSchema {
   messages: {
     key: string;
@@ -28,6 +35,10 @@ interface ChatDB extends DBSchema {
       encryptedKey: string;
     };
   };
+  privateKeys: {
+    key: string;
+    value: StoredKeyPair;
+  };
 }
 
 let dbInstance: IDBPDatabase<ChatDB> | null = null;
@@ -38,15 +49,24 @@ let dbInstance: IDBPDatabase<ChatDB> | null = null;
 export async function initDB(): Promise<IDBPDatabase<ChatDB>> {
   if (dbInstance) return dbInstance;
 
-  dbInstance = await openDB<ChatDB>('CipherChatDB', 1, {
-    upgrade(db) {
+  dbInstance = await openDB<ChatDB>('CipherChatDB', 2, {
+    upgrade(db, oldVersion) {
       // Messages store
-      const messagesStore = db.createObjectStore('messages', { keyPath: 'id' });
-      messagesStore.createIndex('by-conversation', 'conversationWith');
-      messagesStore.createIndex('by-expiry', 'expiresAt');
+      if (!db.objectStoreNames.contains('messages')) {
+        const messagesStore = db.createObjectStore('messages', { keyPath: 'id' });
+        messagesStore.createIndex('by-conversation', 'conversationWith');
+        messagesStore.createIndex('by-expiry', 'expiresAt');
+      }
 
-      // Keys store (for encrypted private keys)
-      db.createObjectStore('keys', { keyPath: 'keyType' });
+      // Keys store (legacy - for encrypted private keys)
+      if (!db.objectStoreNames.contains('keys')) {
+        db.createObjectStore('keys', { keyPath: 'keyType' });
+      }
+
+      // Private keys store (v2 - stores JWK format keys)
+      if (!db.objectStoreNames.contains('privateKeys')) {
+        db.createObjectStore('privateKeys', { keyPath: 'id' });
+      }
     },
   });
 
@@ -158,4 +178,53 @@ export async function clearAllData(): Promise<void> {
   const db = await initDB();
   await db.clear('messages');
   await db.clear('keys');
+  await db.clear('privateKeys');
+}
+
+/**
+ * Store private keys for a user (JWK format)
+ */
+export async function storePrivateKeys(
+  userId: string,
+  encryptionPrivateKey: JsonWebKey,
+  signaturePrivateKey: JsonWebKey
+): Promise<void> {
+  const db = await initDB();
+  
+  await db.put('privateKeys', {
+    id: 'keys', // Single record per browser
+    userId,
+    encryptionPrivateKey,
+    signaturePrivateKey,
+  });
+}
+
+/**
+ * Get stored private keys for a user
+ */
+export async function getStoredPrivateKeys(userId: string): Promise<{
+  encryptionPrivateKey: JsonWebKey;
+  signaturePrivateKey: JsonWebKey;
+} | null> {
+  const db = await initDB();
+  
+  const stored = await db.get('privateKeys', 'keys');
+  
+  // Only return keys if they belong to the current user
+  if (stored && stored.userId === userId) {
+    return {
+      encryptionPrivateKey: stored.encryptionPrivateKey,
+      signaturePrivateKey: stored.signaturePrivateKey,
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * Clear private keys (on sign out)
+ */
+export async function clearPrivateKeys(): Promise<void> {
+  const db = await initDB();
+  await db.clear('privateKeys');
 }

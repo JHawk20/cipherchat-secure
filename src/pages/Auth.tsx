@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -6,7 +6,62 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Shield, Lock } from 'lucide-react';
+import { Shield, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
+
+// Validation rules
+const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,20}$/;
+const MIN_PASSWORD_LENGTH = 8;
+
+interface ValidationResult {
+  isValid: boolean;
+  message: string;
+}
+
+function validateUsername(username: string): ValidationResult {
+  if (!username.trim()) {
+    return { isValid: false, message: 'Username is required' };
+  }
+  if (username.length < 3) {
+    return { isValid: false, message: 'Username must be at least 3 characters' };
+  }
+  if (username.length > 20) {
+    return { isValid: false, message: 'Username must be 20 characters or less' };
+  }
+  if (!USERNAME_REGEX.test(username)) {
+    return { isValid: false, message: 'Username can only contain letters, numbers, and underscores' };
+  }
+  return { isValid: true, message: 'Username is valid' };
+}
+
+function validatePassword(password: string): ValidationResult {
+  if (!password) {
+    return { isValid: false, message: 'Password is required' };
+  }
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return { isValid: false, message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters` };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { isValid: false, message: 'Password must contain at least one uppercase letter' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { isValid: false, message: 'Password must contain at least one lowercase letter' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { isValid: false, message: 'Password must contain at least one number' };
+  }
+  return { isValid: true, message: 'Password is strong' };
+}
+
+function validateEmail(email: string): ValidationResult {
+  if (!email.trim()) {
+    return { isValid: false, message: 'Email is required' };
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return { isValid: false, message: 'Please enter a valid email address' };
+  }
+  return { isValid: true, message: 'Email is valid' };
+}
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
@@ -14,8 +69,21 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
+  const [touched, setTouched] = useState({ email: false, password: false, username: false });
   const { signUp, signIn, user } = useAuth();
   const navigate = useNavigate();
+
+  // Validation states
+  const emailValidation = useMemo(() => validateEmail(email), [email]);
+  const passwordValidation = useMemo(() => validatePassword(password), [password]);
+  const usernameValidation = useMemo(() => validateUsername(username), [username]);
+
+  const isFormValid = useMemo(() => {
+    if (isLogin) {
+      return emailValidation.isValid && password.length > 0;
+    }
+    return emailValidation.isValid && passwordValidation.isValid && usernameValidation.isValid;
+  }, [isLogin, emailValidation.isValid, passwordValidation.isValid, usernameValidation.isValid, password]);
 
   useEffect(() => {
     if (user) {
@@ -25,6 +93,21 @@ export default function Auth() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Mark all fields as touched
+    setTouched({ email: true, password: true, username: true });
+
+    if (!isFormValid) {
+      if (!emailValidation.isValid) {
+        toast.error(emailValidation.message);
+      } else if (!isLogin && !usernameValidation.isValid) {
+        toast.error(usernameValidation.message);
+      } else if (!isLogin && !passwordValidation.isValid) {
+        toast.error(passwordValidation.message);
+      }
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -36,13 +119,7 @@ export default function Auth() {
           toast.success('Welcome back!');
         }
       } else {
-        if (!username.trim()) {
-          toast.error('Please enter a username');
-          setLoading(false);
-          return;
-        }
-        
-        const { error } = await signUp(email, password, username);
+        const { error } = await signUp(email, password, username.trim());
         if (error) {
           toast.error(error.message);
         } else {
@@ -83,12 +160,26 @@ export default function Auth() {
                 <Input
                   id="username"
                   type="text"
-                  placeholder="Choose a username"
+                  placeholder="Choose a username (3-20 chars)"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  required={!isLogin}
-                  className="border-primary/30 focus:border-primary"
+                  onBlur={() => setTouched(t => ({ ...t, username: true }))}
+                  className={`border-primary/30 focus:border-primary ${
+                    touched.username && !usernameValidation.isValid ? 'border-destructive' : ''
+                  }`}
                 />
+                {touched.username && username && (
+                  <p className={`text-xs flex items-center gap-1 ${
+                    usernameValidation.isValid ? 'text-verified' : 'text-destructive'
+                  }`}>
+                    {usernameValidation.isValid ? (
+                      <CheckCircle2 className="w-3 h-3" />
+                    ) : (
+                      <AlertCircle className="w-3 h-3" />
+                    )}
+                    {usernameValidation.message}
+                  </p>
+                )}
               </div>
             )}
             
@@ -100,9 +191,17 @@ export default function Auth() {
                 placeholder="your@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                required
-                className="border-primary/30 focus:border-primary"
+                onBlur={() => setTouched(t => ({ ...t, email: true }))}
+                className={`border-primary/30 focus:border-primary ${
+                  touched.email && !emailValidation.isValid ? 'border-destructive' : ''
+                }`}
               />
+              {touched.email && email && !emailValidation.isValid && (
+                <p className="text-xs text-destructive flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  {emailValidation.message}
+                </p>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -113,15 +212,29 @@ export default function Auth() {
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                required
-                className="border-primary/30 focus:border-primary"
+                onBlur={() => setTouched(t => ({ ...t, password: true }))}
+                className={`border-primary/30 focus:border-primary ${
+                  touched.password && !isLogin && !passwordValidation.isValid ? 'border-destructive' : ''
+                }`}
               />
+              {!isLogin && touched.password && password && (
+                <p className={`text-xs flex items-center gap-1 ${
+                  passwordValidation.isValid ? 'text-verified' : 'text-destructive'
+                }`}>
+                  {passwordValidation.isValid ? (
+                    <CheckCircle2 className="w-3 h-3" />
+                  ) : (
+                    <AlertCircle className="w-3 h-3" />
+                  )}
+                  {passwordValidation.message}
+                </p>
+              )}
             </div>
 
             <Button 
               type="submit" 
               className="w-full gradient-cyber text-primary-foreground font-semibold"
-              disabled={loading}
+              disabled={loading || (!isLogin && !isFormValid)}
             >
               {loading ? 'Processing...' : isLogin ? 'Sign In' : 'Create Account'}
             </Button>
