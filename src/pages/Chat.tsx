@@ -47,6 +47,11 @@ interface Message {
 export default function Chat() {
   const { user, username, signOut, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/auth');
+  };
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -334,7 +339,7 @@ export default function Chat() {
           <Button 
             variant="outline" 
             size="sm"
-            onClick={signOut}
+            onClick={handleSignOut}
             className="border-destructive/30 text-destructive hover:bg-destructive/10"
           >
             <LogOut className="w-4 h-4 mr-2" />
