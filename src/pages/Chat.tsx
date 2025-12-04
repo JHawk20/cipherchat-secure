@@ -8,9 +8,8 @@ import { MessageInput } from '@/components/MessageInput';
 import { SafetyCode } from '@/components/SafetyCode';
 import { TypingIndicator } from '@/components/TypingIndicator';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
-import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { LogOut, Shield, Loader2 } from 'lucide-react';
+import { Shield, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   generateRSAKeyPairs,
@@ -50,13 +49,9 @@ interface Message {
 }
 
 export default function Chat() {
-  const { user, username, signOut, loading: authLoading } = useAuth();
+  const { user, username, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/auth');
-  };
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -451,44 +446,9 @@ export default function Chat() {
   );
 
   return (
-    <div className="h-screen flex flex-col">
-      {/* Header */}
-      <header className="glass-strong border-b border-border/50 px-6 py-4 relative z-10">
-        <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
-          <div className="flex items-center gap-4">
-            {/* Logo */}
-            <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 glow-subtle">
-              <Shield className="w-6 h-6 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold gradient-text">
-                CipherChat
-              </h1>
-              <div className="flex items-center gap-2 mt-0.5">
-                <div className="w-2 h-2 rounded-full bg-verified pulse-online" />
-                <p className="text-xs text-muted-foreground">
-                  {username}
-                </p>
-              </div>
-            </div>
-          </div>
-          
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleSignOut}
-            className="border-border/50 text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/5 transition-all duration-200"
-          >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
-          </Button>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* User List */}
-        <div className="w-80 flex-shrink-0 border-r border-border/50">
+    <div className="h-full flex overflow-hidden">
+      {/* User List */}
+      <div className="w-80 flex-shrink-0 border-r border-border/50">
           {username && (
             <UserList
               users={users}
@@ -586,6 +546,5 @@ export default function Chat() {
           )}
         </div>
       </div>
-    </div>
   );
 }
