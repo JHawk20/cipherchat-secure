@@ -134,19 +134,55 @@ export default function Auth() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background via-background to-primary/5">
-      <Card className="w-full max-w-md border-primary/20 glow-cyber">
-        <CardHeader className="space-y-4 text-center">
-          <div className="mx-auto flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 glow-cyber">
-            <Shield className="w-8 h-8 text-primary" />
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <Card className="w-full max-w-md glass-strong border-border/50 shadow-2xl">
+        <CardHeader className="space-y-6 text-center pb-2">
+          {/* Logo */}
+          <div className="mx-auto">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center glow-cyber">
+                <Shield className="w-10 h-10 text-primary" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-lg bg-verified flex items-center justify-center">
+                <Lock className="w-3 h-3 text-white" />
+              </div>
+            </div>
           </div>
+          
+          {/* Title */}
           <div>
-            <CardTitle className="text-3xl font-bold gradient-cyber bg-clip-text text-transparent">
+            <CardTitle className="text-3xl font-bold gradient-text">
               CipherChat
             </CardTitle>
-            <CardDescription className="text-base mt-2">
-              End-to-end encrypted messaging with RSA & AES
+            <CardDescription className="text-sm mt-3 leading-relaxed">
+              Secure messaging with <span className="text-primary font-medium">RSA-2048</span> and <span className="text-accent font-medium">AES-256</span> encryption
             </CardDescription>
+          </div>
+
+          {/* Tab switcher */}
+          <div className="flex p-1 bg-muted/30 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setIsLogin(true)}
+              className={`flex-1 py-2 px-4 text-sm font-medium rounded-lg transition-all duration-200 ${
+                isLogin 
+                  ? 'bg-primary text-primary-foreground shadow-lg' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsLogin(false)}
+              className={`flex-1 py-2 px-4 text-sm font-medium rounded-lg transition-all duration-200 ${
+                !isLogin 
+                  ? 'bg-primary text-primary-foreground shadow-lg' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Sign Up
+            </button>
           </div>
         </CardHeader>
         <CardContent>
@@ -233,28 +269,51 @@ export default function Auth() {
 
             <Button 
               type="submit" 
-              className="w-full gradient-cyber text-primary-foreground font-semibold"
+              className="w-full h-11 btn-cyber text-primary-foreground font-semibold rounded-xl glow-cyber"
               disabled={loading || (!isLogin && !isFormValid)}
             >
-              {loading ? 'Processing...' : isLogin ? 'Sign In' : 'Create Account'}
+              {loading ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  {isLogin ? 'Signing in...' : 'Creating keys...'}
+                </span>
+              ) : isLogin ? 'Sign In' : 'Create Account'}
             </Button>
           </form>
 
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
-            >
-              {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-            </button>
+          {/* Security info */}
+          <div className="mt-6 p-4 rounded-xl bg-gradient-to-br from-primary/5 to-accent/5 border border-primary/10">
+            <div className="flex items-start gap-3">
+              <div className="p-1.5 rounded-lg bg-primary/10">
+                <Shield className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-foreground mb-1">Your keys, your control</p>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  RSA keys are generated locally and stored only on your device. 
+                  Private keys never leave your browser.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-6 p-4 bg-muted/30 rounded-lg border border-primary/10">
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              <strong className="text-primary">Security Note:</strong> Your RSA keys are generated locally 
-              and stored securely. Your private keys never leave your device.
-            </p>
+          {/* Encryption badges */}
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/30 text-[10px] text-muted-foreground">
+              <div className="w-1.5 h-1.5 rounded-full bg-verified" />
+              RSA-2048
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/30 text-[10px] text-muted-foreground">
+              <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+              AES-256-GCM
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/30 text-[10px] text-muted-foreground">
+              <div className="w-1.5 h-1.5 rounded-full bg-accent" />
+              SHA-256
+            </div>
           </div>
         </CardContent>
       </Card>

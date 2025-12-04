@@ -431,8 +431,13 @@ export default function Chat() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Initializing encryption...</p>
+          <div className="relative">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mx-auto mb-4 glow-cyber">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          </div>
+          <h2 className="text-lg font-semibold mb-1 gradient-text">Initializing</h2>
+          <p className="text-sm text-muted-foreground">Setting up end-to-end encryption...</p>
         </div>
       </div>
     );
@@ -446,19 +451,25 @@ export default function Chat() {
   );
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-screen flex flex-col">
       {/* Header */}
-      <header className="border-b border-border bg-card p-4">
+      <header className="glass-strong border-b border-border/50 px-6 py-4 relative z-10">
         <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
-          <div className="flex items-center gap-3">
-            <Shield className="w-6 h-6 text-primary" />
+          <div className="flex items-center gap-4">
+            {/* Logo */}
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 glow-subtle">
+              <Shield className="w-6 h-6 text-primary" />
+            </div>
             <div>
-              <h1 className="text-xl font-bold gradient-cyber bg-clip-text text-transparent">
+              <h1 className="text-xl font-bold gradient-text">
                 CipherChat
               </h1>
-              <p className="text-xs text-muted-foreground">
-                Logged in as {username}
-              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <div className="w-2 h-2 rounded-full bg-verified pulse-online" />
+                <p className="text-xs text-muted-foreground">
+                  {username}
+                </p>
+              </div>
             </div>
           </div>
           
@@ -466,7 +477,7 @@ export default function Chat() {
             variant="outline" 
             size="sm"
             onClick={handleSignOut}
-            className="border-destructive/30 text-destructive hover:bg-destructive/10"
+            className="border-border/50 text-muted-foreground hover:text-destructive hover:border-destructive/50 hover:bg-destructive/5 transition-all duration-200"
           >
             <LogOut className="w-4 h-4 mr-2" />
             Sign Out
@@ -477,7 +488,7 @@ export default function Chat() {
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* User List */}
-        <div className="w-80 flex-shrink-0">
+        <div className="w-80 flex-shrink-0 border-r border-border/50">
           {username && (
             <UserList
               users={users}
@@ -489,25 +500,39 @@ export default function Chat() {
         </div>
 
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col bg-background/50">
           {selectedUser && selectedUserData ? (
             <>
               {/* Chat Header */}
-              <div className="p-4 border-b border-border bg-card">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">{selectedUser}</h2>
+              <div className="p-5 border-b border-border/50 glass">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-semibold text-sm">
+                    {selectedUser.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold">{selectedUser}</h2>
+                    <p className="text-xs text-muted-foreground">End-to-end encrypted conversation</p>
+                  </div>
                 </div>
-                <div className="mt-3">
-                  <SafetyCode 
-                    code={selectedUserData.safety_code} 
-                    username={selectedUser}
-                  />
-                </div>
+                <SafetyCode 
+                  code={selectedUserData.safety_code} 
+                  username={selectedUser}
+                />
               </div>
 
               {/* Messages */}
-              <ScrollArea className="flex-1 p-4">
-                <div className="space-y-4 max-w-4xl mx-auto">
+              <ScrollArea className="flex-1 p-6">
+                <div className="space-y-4 max-w-3xl mx-auto">
+                  {conversationMessages.length === 0 && (
+                    <div className="text-center py-12">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center mx-auto mb-4">
+                        <Shield className="w-8 h-8 text-primary/50" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Send an encrypted message to start the conversation
+                      </p>
+                    </div>
+                  )}
                   {conversationMessages.map((msg) => (
                     <MessageBubble
                       key={msg.id}
@@ -524,7 +549,7 @@ export default function Chat() {
 
               {/* Typing Indicator */}
               {isSelectedUserTyping && selectedUser && (
-                <div className="px-4 py-2 border-t border-border bg-card/50">
+                <div className="px-6 py-3 border-t border-border/30 bg-muted/20">
                   <TypingIndicator username={selectedUser} />
                 </div>
               )}
@@ -538,12 +563,24 @@ export default function Chat() {
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center">
-              <div className="text-center">
-                <Shield className="w-16 h-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-semibold mb-2">Select a user to start chatting</h3>
-                <p className="text-sm text-muted-foreground">
-                  All messages are end-to-end encrypted
+              <div className="text-center max-w-md mx-auto px-6">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center mx-auto mb-6 glow-subtle">
+                  <Shield className="w-10 h-10 text-primary/50" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">Select a contact</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Choose someone from your contacts to start a secure, end-to-end encrypted conversation.
                 </p>
+                <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/30">
+                    <div className="w-1.5 h-1.5 rounded-full bg-verified" />
+                    RSA-2048
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/30">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                    AES-256
+                  </div>
+                </div>
               </div>
             </div>
           )}

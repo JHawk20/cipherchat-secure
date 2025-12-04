@@ -1,4 +1,4 @@
-import { CheckCircle2, AlertTriangle, Clock } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Clock, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MessageBubbleProps {
@@ -31,50 +31,98 @@ export function MessageBubble({ message, isSent, verified, timestamp, expiresAt 
   return (
     <div
       className={cn(
-        "flex gap-2 max-w-[80%] animate-in fade-in-0 slide-in-from-bottom-2 duration-300",
+        "flex gap-2 max-w-[75%] message-in",
         isSent ? "ml-auto" : "mr-auto"
       )}
     >
       <div
         className={cn(
-          "rounded-2xl px-4 py-3 relative",
+          "relative rounded-2xl px-4 py-3 shadow-lg",
+          "transition-all duration-200 hover:shadow-xl",
           isSent 
-            ? "bg-primary text-primary-foreground ml-auto rounded-br-sm" 
-            : "bg-muted text-foreground rounded-bl-sm"
+            ? "bg-gradient-to-br from-primary to-primary/80 text-primary-foreground rounded-br-md" 
+            : "glass rounded-bl-md"
         )}
       >
-        <p className="text-sm leading-relaxed break-words">
+        {/* Encryption indicator for received messages */}
+        {!isSent && (
+          <div className="absolute -left-1 -top-1">
+            <div className={cn(
+              "w-5 h-5 rounded-full flex items-center justify-center",
+              verified 
+                ? "bg-verified/20 text-verified" 
+                : "bg-unverified/20 text-unverified"
+            )}>
+              <Shield className="w-3 h-3" />
+            </div>
+          </div>
+        )}
+
+        {/* Message text */}
+        <p className={cn(
+          "text-sm leading-relaxed break-words",
+          !isSent && "mt-1"
+        )}>
           {message}
         </p>
         
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-xs opacity-70">
+        {/* Footer */}
+        <div className={cn(
+          "flex items-center gap-2 mt-2 text-[10px]",
+          isSent ? "text-primary-foreground/70" : "text-muted-foreground"
+        )}>
+          <span className="font-medium">
             {formatTime(timestamp)}
           </span>
           
+          {/* Verification status for received messages */}
           {!isSent && (
-            <div className="flex items-center gap-1">
+            <>
+              <span className="opacity-50">·</span>
               {verified ? (
                 <div className="flex items-center gap-1 text-verified">
                   <CheckCircle2 className="w-3 h-3" />
-                  <span className="text-xs font-medium">Verified</span>
+                  <span className="font-semibold">Verified</span>
                 </div>
               ) : (
                 <div className="flex items-center gap-1 text-unverified">
                   <AlertTriangle className="w-3 h-3" />
-                  <span className="text-xs font-medium">Unverified</span>
+                  <span className="font-semibold">Unverified</span>
                 </div>
               )}
-            </div>
+            </>
+          )}
+
+          {/* Sent indicator */}
+          {isSent && (
+            <>
+              <span className="opacity-50">·</span>
+              <div className="flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                <span>Encrypted</span>
+              </div>
+            </>
           )}
           
+          {/* Expiry timer */}
           {expiresAt && (
-            <div className="flex items-center gap-1 text-xs opacity-70">
-              <Clock className="w-3 h-3" />
-              <span>{getTimeRemaining(expiresAt)}</span>
-            </div>
+            <>
+              <span className="opacity-50">·</span>
+              <div className={cn(
+                "flex items-center gap-1 font-semibold",
+                isSent ? "text-primary-foreground/90" : "text-destructive"
+              )}>
+                <Clock className="w-3 h-3" />
+                <span>{getTimeRemaining(expiresAt)}</span>
+              </div>
+            </>
           )}
         </div>
+
+        {/* Subtle glow for sent messages */}
+        {isSent && (
+          <div className="absolute inset-0 rounded-2xl rounded-br-md bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+        )}
       </div>
     </div>
   );

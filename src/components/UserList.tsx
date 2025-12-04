@@ -42,79 +42,130 @@ function formatLastSeen(lastSeen: string | null): string {
   return `${days}d ago`;
 }
 
+// Generate a gradient based on username
+function getAvatarGradient(username: string): string {
+  const gradients = [
+    'from-cyan-400 to-blue-500',
+    'from-purple-400 to-pink-500',
+    'from-green-400 to-cyan-500',
+    'from-orange-400 to-red-500',
+    'from-pink-400 to-purple-500',
+    'from-blue-400 to-indigo-500',
+    'from-teal-400 to-green-500',
+    'from-yellow-400 to-orange-500',
+  ];
+  const index = username.charCodeAt(0) % gradients.length;
+  return gradients[index];
+}
+
+function getInitials(username: string): string {
+  return username.slice(0, 2).toUpperCase();
+}
+
 export function UserList({ users, currentUser, selectedUser, onSelectUser }: UserListProps) {
   const otherUsers = users.filter(u => u.username !== currentUser);
+  const onlineCount = otherUsers.filter(u => isUserOnline(u.last_seen)).length;
 
   return (
-    <div className="h-full flex flex-col bg-card border-r border-border">
-      <div className="p-4 border-b border-border">
-        <h2 className="font-semibold text-lg flex items-center gap-2">
-          <User className="w-5 h-5 text-primary" />
-          Contacts
-        </h2>
-        <p className="text-xs text-muted-foreground mt-1">
-          {otherUsers.filter(u => isUserOnline(u.last_seen)).length} online, {otherUsers.length} total
-        </p>
+    <div className="h-full flex flex-col glass-strong">
+      {/* Header */}
+      <div className="p-5 border-b border-border/50">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-primary/20 to-accent/20 glow-subtle">
+            <User className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h2 className="font-semibold text-lg">Contacts</h2>
+            <p className="text-xs text-muted-foreground">
+              <span className="text-verified font-medium">{onlineCount}</span> online · {otherUsers.length} total
+            </p>
+          </div>
+        </div>
       </div>
 
+      {/* User List */}
       <ScrollArea className="flex-1">
-        <div className="p-2">
+        <div className="p-3 space-y-1">
           {otherUsers.length === 0 ? (
-            <div className="text-center py-8 px-4">
-              <User className="w-12 h-12 mx-auto mb-3 text-muted-foreground opacity-50" />
-              <p className="text-sm text-muted-foreground">
-                No other users online yet
+            <div className="text-center py-12 px-4">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-muted/50 to-muted/30 flex items-center justify-center">
+                <User className="w-8 h-8 text-muted-foreground/50" />
+              </div>
+              <p className="text-sm font-medium text-muted-foreground mb-1">
+                No contacts yet
+              </p>
+              <p className="text-xs text-muted-foreground/70">
+                Waiting for others to join...
               </p>
             </div>
           ) : (
             otherUsers.map((user) => {
               const online = isUserOnline(user.last_seen);
+              const isSelected = selectedUser === user.username;
+              
               return (
                 <button
                   key={user.username}
                   onClick={() => onSelectUser(user.username)}
                   className={cn(
-                    "w-full p-3 rounded-lg text-left transition-all duration-200",
-                    "hover:bg-muted/50 group",
-                    selectedUser === user.username && "bg-primary/10 border border-primary/30"
+                    "w-full p-3 rounded-xl text-left transition-all duration-200 group",
+                    "hover:bg-primary/5 hover:border-primary/20",
+                    "border border-transparent",
+                    isSelected && "bg-primary/10 border-primary/30 glow-subtle"
                   )}
                 >
                   <div className="flex items-center gap-3">
+                    {/* Avatar */}
                     <div className="relative">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                        <User className="w-5 h-5 text-primary" />
+                      <div className={cn(
+                        "w-11 h-11 rounded-xl bg-gradient-to-br flex items-center justify-center",
+                        "font-semibold text-sm text-white shadow-lg",
+                        "transition-transform duration-200 group-hover:scale-105",
+                        getAvatarGradient(user.username)
+                      )}>
+                        {getInitials(user.username)}
                       </div>
-                      <Circle 
-                        className={cn(
-                          "absolute bottom-0 right-0 w-3 h-3",
-                          online 
-                            ? "text-verified fill-verified" 
-                            : "text-muted-foreground fill-muted-foreground"
-                        )}
-                      />
+                      {/* Online indicator */}
+                      <div className={cn(
+                        "absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-card",
+                        online 
+                          ? "bg-verified pulse-online" 
+                          : "bg-muted-foreground/50"
+                      )} />
                     </div>
+
+                    {/* User info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-sm truncate">
                           {user.username}
                         </p>
-                        <span className="text-xs text-muted-foreground">
-                          {online ? 'Online' : formatLastSeen(user.last_seen)}
-                        </span>
+                        {online && (
+                          <span className="text-[10px] font-medium text-verified bg-verified/10 px-1.5 py-0.5 rounded-full">
+                            ONLINE
+                          </span>
+                        )}
                       </div>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <p className="text-xs text-muted-foreground truncate font-mono-code cursor-help">
-                              {user.safety_code.substring(0, 19)}...
-                            </p>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom" className="max-w-xs">
-                            <p className="text-xs font-mono-code break-all">{user.safety_code}</p>
-                            <p className="text-xs text-muted-foreground mt-1">Click user to see full safety code</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <p className="text-[11px] text-muted-foreground truncate font-mono-code cursor-help opacity-70 group-hover:opacity-100 transition-opacity">
+                                {user.safety_code.substring(0, 16)}...
+                              </p>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-xs glass">
+                              <p className="text-xs font-mono-code break-all text-primary">{user.safety_code}</p>
+                              <p className="text-[10px] text-muted-foreground mt-1.5">Safety code · Click to verify identity</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                        {!online && (
+                          <span className="text-[10px] text-muted-foreground/70">
+                            · {formatLastSeen(user.last_seen)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </button>
