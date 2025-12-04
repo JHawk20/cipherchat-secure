@@ -6,6 +6,8 @@ import { UserList } from '@/components/UserList';
 import { MessageBubble } from '@/components/MessageBubble';
 import { MessageInput } from '@/components/MessageInput';
 import { SafetyCode } from '@/components/SafetyCode';
+import { TypingIndicator } from '@/components/TypingIndicator';
+import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { LogOut, Shield, Loader2 } from 'lucide-react';
@@ -61,6 +63,9 @@ export default function Chat() {
   const [keyPair, setKeyPair] = useState<RSAKeyPair | null>(null);
   const [initializing, setInitializing] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Typing indicator hook
+  const { broadcastTyping, isSelectedUserTyping } = useTypingIndicator(username, selectedUser);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -517,9 +522,17 @@ export default function Chat() {
                 </div>
               </ScrollArea>
 
+              {/* Typing Indicator */}
+              {isSelectedUserTyping && selectedUser && (
+                <div className="px-4 py-2 border-t border-border bg-card/50">
+                  <TypingIndicator username={selectedUser} />
+                </div>
+              )}
+
               {/* Message Input */}
               <MessageInput 
-                onSend={sendMessage} 
+                onSend={sendMessage}
+                onTyping={broadcastTyping}
                 disabled={!keyPair}
               />
             </>

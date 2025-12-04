@@ -12,18 +12,38 @@ import {
 
 interface MessageInputProps {
   onSend: (message: string, expiryMinutes: number | null) => void;
+  onTyping?: (isTyping: boolean) => void;
   disabled?: boolean;
 }
 
-export function MessageInput({ onSend, disabled }: MessageInputProps) {
+export function MessageInput({ onSend, onTyping, disabled }: MessageInputProps) {
   const [message, setMessage] = useState('');
   const [expiryMinutes, setExpiryMinutes] = useState<number | null>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMessage(e.target.value);
+    // Broadcast typing status when user types
+    if (onTyping) {
+      onTyping(e.target.value.length > 0);
+    }
+  };
+
+  const handleBlur = () => {
+    // Stop typing indicator when input loses focus
+    if (onTyping) {
+      onTyping(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim() && !disabled) {
       onSend(message.trim(), expiryMinutes);
       setMessage('');
+      // Stop typing indicator when message is sent
+      if (onTyping) {
+        onTyping(false);
+      }
     }
   };
 
@@ -59,7 +79,8 @@ export function MessageInput({ onSend, disabled }: MessageInputProps) {
           
           <Input
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={handleChange}
+            onBlur={handleBlur}
             placeholder="Type an encrypted message..."
             disabled={disabled}
             className="border-primary/30 focus:border-primary"
