@@ -9,7 +9,7 @@ import { SafetyCode } from '@/components/SafetyCode';
 import { TypingIndicator } from '@/components/TypingIndicator';
 import { useTypingIndicator } from '@/hooks/useTypingIndicator';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Shield, Loader2 } from 'lucide-react';
+import { Shield, Loader2, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   generateRSAKeyPairs,
@@ -59,7 +59,6 @@ export default function Chat() {
   const [initializing, setInitializing] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Typing indicator hook
   const { broadcastTyping, isSelectedUserTyping } = useTypingIndicator(username, selectedUser);
 
   useEffect(() => {
@@ -68,7 +67,6 @@ export default function Chat() {
     }
   }, [user, authLoading, navigate]);
 
-  // Initialize keys and register user
   useEffect(() => {
     let isMounted = true;
 
@@ -90,7 +88,6 @@ export default function Chat() {
     if (!user || !username) return;
     
     try {
-      // Check if user already exists in database
       const { data: existingUser } = await supabase
         .from('users')
         .select('*')
@@ -100,28 +97,21 @@ export default function Chat() {
       if (!isMounted) return;
 
       if (!existingUser) {
-        // New user - generate RSA keys
         const keys = await generateRSAKeyPairs();
         if (!isMounted) return;
         setKeyPair(keys);
 
-        // Export public keys for server storage
         const exportedPublic = await exportPublicKeys(keys);
-        
-        // Export private keys for local storage
         const exportedPrivate = await exportPrivateKeys(keys);
         
-        // Store private keys locally in IndexedDB
         await storePrivateKeys(
           user.id,
           exportedPrivate.encryptionPrivateKey,
           exportedPrivate.signaturePrivateKey
         );
         
-        // Generate safety code
         const safetyCode = await generateSafetyCode(exportedPublic.encryptionPublicKey);
 
-        // Register user with public keys
         const { error } = await supabase.from('users').insert({
           id: user.id,
           username: username,
@@ -131,15 +121,12 @@ export default function Chat() {
         });
 
         if (error) throw error;
-        
-        if (isMounted) toast.success('Encryption keys generated and stored securely!');
+        if (isMounted) toast.success('Encryption keys generated!');
       } else {
-        // Existing user - try to recover keys from IndexedDB
         const storedKeys = await getStoredPrivateKeys(user.id);
         if (!isMounted) return;
         
         if (storedKeys) {
-          // Recover keys from local storage
           const keys = await importPrivateKeys(
             storedKeys.encryptionPrivateKey,
             storedKeys.signaturePrivateKey,
@@ -148,31 +135,22 @@ export default function Chat() {
           );
           if (!isMounted) return;
           setKeyPair(keys);
-          toast.success('Encryption keys recovered!');
         } else {
-          // Keys not found locally - this is a new device or keys were cleared
-          // Generate new keys and update the user record
           const keys = await generateRSAKeyPairs();
           if (!isMounted) return;
           setKeyPair(keys);
 
-          // Export public keys for server storage
           const exportedPublic = await exportPublicKeys(keys);
-          
-          // Export private keys for local storage
           const exportedPrivate = await exportPrivateKeys(keys);
           
-          // Store private keys locally in IndexedDB
           await storePrivateKeys(
             user.id,
             exportedPrivate.encryptionPrivateKey,
             exportedPrivate.signaturePrivateKey
           );
           
-          // Generate new safety code
           const safetyCode = await generateSafetyCode(exportedPublic.encryptionPublicKey);
 
-          // Update user's public keys (old messages can't be decrypted anymore)
           const { error } = await supabase
             .from('users')
             .update({
@@ -183,14 +161,13 @@ export default function Chat() {
             .eq('id', user.id);
 
           if (error) throw error;
-          
-          if (isMounted) toast.warning('New device detected. New encryption keys generated. Previous messages cannot be decrypted.');
+          if (isMounted) toast.warning('New keys generated. Old messages cannot be decrypted.');
         }
       }
 
       if (isMounted) fetchUsers();
     } catch (error) {
-      if (import.meta.env.DEV) console.error('Error initializing user:', error);
+      if (import.meta.env.DEV) console.error('Error initializing:', error);
       if (isMounted) toast.error('Failed to initialize encryption');
     } finally {
       if (isMounted) setInitializing(false);
@@ -203,24 +180,16 @@ export default function Chat() {
       .select('*')
       .order('last_seen', { ascending: false });
 
-    if (error) {
-      if (import.meta.env.DEV) console.error('Error fetching users:', error);
-      return;
-    }
-
-    setUsers(data || []);
+    if (!error) setUsers(data || []);
   };
 
-  // Fetch messages for selected user
   useEffect(() => {
     if (!selectedUser || !username) return;
 
     fetchMessages();
 
-    // Subscribe to new messages - listen for messages in both directions
-    // Channel 1: Messages FROM the selected user TO current user
-    const incomingChannel = supabase
-      .channel(`incoming-${selectedUser}-${username}`)
+    const channel = supabase
+      .channel(`messages-${selectedUser}-${username}`)
       .on(
         'postgres_changes',
         {
@@ -231,7 +200,6 @@ export default function Chat() {
         },
         (payload) => {
           const msg = payload.new as Message;
-          // Only handle if it's from the selected user
           if (msg.sender_username === selectedUser) {
             handleNewMessage(msg);
           }
@@ -240,7 +208,7 @@ export default function Chat() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(incomingChannel);
+      supabase.removeChannel(channel);
     };
   }, [selectedUser, username]);
 
@@ -253,10 +221,7 @@ export default function Chat() {
       .or(`and(sender_username.eq.${username},recipient_username.eq.${selectedUser}),and(sender_username.eq.${selectedUser},recipient_username.eq.${username})`)
       .order('timestamp', { ascending: true });
 
-    if (error) {
-      if (import.meta.env.DEV) console.error('Error fetching messages:', error);
-      return;
-    }
+    if (error) return;
 
     const decrypted = await Promise.all(
       (data || []).map(msg => decryptAndVerifyMessage(msg))
@@ -271,7 +236,6 @@ export default function Chat() {
     }
 
     try {
-      // Decrypt message
       const plaintext = await decryptMessage(
         msg.ciphertext,
         msg.aes_nonce,
@@ -279,7 +243,6 @@ export default function Chat() {
         keyPair.encryptionKeyPair.privateKey
       );
 
-      // Verify signature
       const senderUser = users.find(u => u.username === msg.sender_username);
       if (senderUser) {
         const senderPublicKey = await importPublicKey(
@@ -293,16 +256,11 @@ export default function Chat() {
           senderPublicKey
         );
 
-        return {
-          ...msg,
-          decryptedText: plaintext,
-          verified: isVerified,
-        };
+        return { ...msg, decryptedText: plaintext, verified: isVerified };
       }
 
       return { ...msg, decryptedText: plaintext, verified: false };
-    } catch (error) {
-      if (import.meta.env.DEV) console.error('Error decrypting message:', error);
+    } catch {
       return { ...msg, decryptedText: '[Decryption failed]', verified: false };
     }
   };
@@ -316,7 +274,6 @@ export default function Chat() {
     if (!selectedUser || !username || !keyPair) return;
 
     try {
-      // Get recipient's public key
       const recipient = users.find(u => u.username === selectedUser);
       if (!recipient) {
         toast.error('Recipient not found');
@@ -328,21 +285,17 @@ export default function Chat() {
         'encryption'
       );
 
-      // Encrypt message
       const { ciphertext, aesNonce, encryptedAesKey } = await encryptMessage(
         text,
         recipientPublicKey
       );
 
-      // Sign message
       const signature = await signMessage(text, keyPair.signatureKeyPair.privateKey);
 
-      // Calculate expiry
       const expiresAt = expiryMinutes
         ? new Date(Date.now() + expiryMinutes * 60000).toISOString()
         : null;
 
-      // Send to server
       const { error } = await supabase.from('encrypted_messages').insert({
         sender_username: username,
         recipient_username: selectedUser,
@@ -355,7 +308,6 @@ export default function Chat() {
 
       if (error) throw error;
 
-      // Add to local messages
       const newMsg: Message = {
         id: crypto.randomUUID(),
         sender_username: username,
@@ -371,11 +323,8 @@ export default function Chat() {
       };
 
       setMessages(prev => [...prev, newMsg]);
-      
-      toast.success('Message encrypted and sent!');
-    } catch (error) {
-      if (import.meta.env.DEV) console.error('Error sending message:', error);
-      toast.error('Failed to send message');
+    } catch {
+      toast.error('Failed to send');
     }
   };
 
@@ -383,7 +332,6 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Update last_seen periodically to show online status
   useEffect(() => {
     if (!user) return;
 
@@ -394,45 +342,30 @@ export default function Chat() {
         .eq('id', user.id);
     };
 
-    // Update immediately
     updateLastSeen();
-
-    // Then update every 2 minutes
     const interval = setInterval(updateLastSeen, 2 * 60 * 1000);
-
     return () => clearInterval(interval);
   }, [user]);
 
-  // Clean up expired messages periodically
   useEffect(() => {
-    const cleanupExpiredMessages = async () => {
-      // Clean local IndexedDB
+    const cleanup = async () => {
       await deleteExpiredMessages();
-      
-      // Filter out expired messages from state
       const now = new Date();
       setMessages(prev => prev.filter(msg => 
         !msg.expires_at || new Date(msg.expires_at) > now
       ));
     };
 
-    // Run cleanup every 30 seconds
-    const interval = setInterval(cleanupExpiredMessages, 30 * 1000);
-
+    const interval = setInterval(cleanup, 30 * 1000);
     return () => clearInterval(interval);
   }, []);
 
   if (authLoading || initializing) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <div className="text-center">
-          <div className="relative">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center mx-auto mb-4 glow-cyber">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            </div>
-          </div>
-          <h2 className="text-lg font-semibold mb-1 gradient-text">Initializing</h2>
-          <p className="text-sm text-muted-foreground">Setting up end-to-end encryption...</p>
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Setting up encryption...</p>
         </div>
       </div>
     );
@@ -446,105 +379,79 @@ export default function Chat() {
   );
 
   return (
-    <div className="h-full flex overflow-hidden">
-      {/* User List */}
-      <div className="w-80 flex-shrink-0 border-r border-border/50">
-          {username && (
-            <UserList
-              users={users}
-              currentUser={username}
-              selectedUser={selectedUser}
-              onSelectUser={setSelectedUser}
-            />
-          )}
-        </div>
-
-        {/* Chat Area */}
-        <div className="flex-1 flex flex-col bg-background/50">
-          {selectedUser && selectedUserData ? (
-            <>
-              {/* Chat Header */}
-              <div className="p-5 border-b border-border/50 glass">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-white font-semibold text-sm">
-                    {selectedUser.slice(0, 2).toUpperCase()}
-                  </div>
-                  <div>
-                    <h2 className="text-lg font-semibold">{selectedUser}</h2>
-                    <p className="text-xs text-muted-foreground">End-to-end encrypted conversation</p>
-                  </div>
-                </div>
-                <SafetyCode 
-                  code={selectedUserData.safety_code} 
-                  username={selectedUser}
-                />
-              </div>
-
-              {/* Messages */}
-              <ScrollArea className="flex-1 p-6">
-                <div className="space-y-4 max-w-3xl mx-auto">
-                  {conversationMessages.length === 0 && (
-                    <div className="text-center py-12">
-                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center mx-auto mb-4">
-                        <Shield className="w-8 h-8 text-primary/50" />
-                      </div>
-                      <p className="text-sm text-muted-foreground">
-                        Send an encrypted message to start the conversation
-                      </p>
-                    </div>
-                  )}
-                  {conversationMessages.map((msg) => (
-                    <MessageBubble
-                      key={msg.id}
-                      message={msg.decryptedText || '[Encrypted]'}
-                      isSent={msg.sender_username === username}
-                      verified={msg.verified ?? false}
-                      timestamp={new Date(msg.timestamp)}
-                      expiresAt={msg.expires_at ? new Date(msg.expires_at) : undefined}
-                    />
-                  ))}
-                  <div ref={messagesEndRef} />
-                </div>
-              </ScrollArea>
-
-              {/* Typing Indicator */}
-              {isSelectedUserTyping && selectedUser && (
-                <div className="px-6 py-3 border-t border-border/30 bg-muted/20">
-                  <TypingIndicator username={selectedUser} />
-                </div>
-              )}
-
-              {/* Message Input */}
-              <MessageInput 
-                onSend={sendMessage}
-                onTyping={broadcastTyping}
-                disabled={!keyPair}
-              />
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center max-w-md mx-auto px-6">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary/10 to-accent/10 flex items-center justify-center mx-auto mb-6 glow-subtle">
-                  <Shield className="w-10 h-10 text-primary/50" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2">Select a contact</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Choose someone from your contacts to start a secure, end-to-end encrypted conversation.
-                </p>
-                <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/30">
-                    <div className="w-1.5 h-1.5 rounded-full bg-verified" />
-                    RSA-2048
-                  </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted/30">
-                    <div className="w-1.5 h-1.5 rounded-full bg-primary" />
-                    AES-256
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+    <div className="h-full flex">
+      {/* Contacts */}
+      <div className="w-72 flex-shrink-0 border-r border-border">
+        {username && (
+          <UserList
+            users={users}
+            currentUser={username}
+            selectedUser={selectedUser}
+            onSelectUser={setSelectedUser}
+          />
+        )}
       </div>
+
+      {/* Chat */}
+      <div className="flex-1 flex flex-col">
+        {selectedUser && selectedUserData ? (
+          <>
+            {/* Header */}
+            <div className="p-4 border-b border-border">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-9 h-9 rounded-lg bg-primary/20 flex items-center justify-center text-primary text-sm font-bold">
+                  {selectedUser.slice(0, 2).toUpperCase()}
+                </div>
+                <div>
+                  <h2 className="font-semibold">{selectedUser}</h2>
+                  <p className="text-xs text-muted-foreground">Encrypted</p>
+                </div>
+              </div>
+              <SafetyCode code={selectedUserData.safety_code} username={selectedUser} />
+            </div>
+
+            {/* Messages */}
+            <ScrollArea className="flex-1 p-4">
+              <div className="space-y-3 max-w-2xl mx-auto">
+                {conversationMessages.length === 0 && (
+                  <div className="text-center py-12">
+                    <MessageSquare className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">No messages yet</p>
+                  </div>
+                )}
+                {conversationMessages.map((msg) => (
+                  <MessageBubble
+                    key={msg.id}
+                    message={msg.decryptedText || '[Encrypted]'}
+                    isSent={msg.sender_username === username}
+                    verified={msg.verified ?? false}
+                    timestamp={new Date(msg.timestamp)}
+                    expiresAt={msg.expires_at ? new Date(msg.expires_at) : undefined}
+                  />
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            </ScrollArea>
+
+            {/* Typing */}
+            {isSelectedUserTyping && <TypingIndicator username={selectedUser} />}
+
+            {/* Input */}
+            <MessageInput 
+              onSend={sendMessage}
+              onTyping={broadcastTyping}
+              disabled={!keyPair}
+            />
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Shield className="w-10 h-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-muted-foreground">Select a contact</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
